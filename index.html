@@ -400,6 +400,7 @@ your-project/
 
             const canvasFilterSupported = checkCanvasFilterSupport();
             console.log('Canvas filter サポート状況:', canvasFilterSupported ? 'サポート済み' : '非サポート（手動実装を使用）');
+            console.log('User Agent:', navigator.userAgent);
 
             // プレビュー生成関数（モバイル対応版・自動フォールバック）
             const generatePreview = async (bgIndex = selectedBackground, hue = hueAdjustment, data = gameData) => {
@@ -447,20 +448,19 @@ your-project/
                         });
                     }
 
-                    // 色相調整の適用（サポート状況に応じて自動選択）
-                    if (hue !== 0 && canvasFilterSupported) {
-                        // Canvas filterを使用（高速）
-                        console.log('Canvas filter使用:', hue, '度');
-                        ctx.filter = `hue-rotate(${hue}deg)`;
-                        ctx.drawImage(backgroundImg, 0, 0, 400, 400);
-                        ctx.filter = 'none'; // フィルターをリセット
-                    } else if (hue !== 0) {
-                        // 手動実装を使用（互換性重視）
+                    // 色相調整の適用（モバイル対応強化版）
+                    if (hue !== 0) {
+                        // 手動実装を優先使用（確実な動作のため）
                         console.log('手動色相調整適用中:', hue, '度');
                         ctx.drawImage(backgroundImg, 0, 0, 400, 400);
                         const imageData = ctx.getImageData(0, 0, 400, 400);
                         const adjustedImageData = applyHueRotationToCanvas(ctx, imageData, hue);
-                        ctx.putImageData(adjustedImageData, 0, 0);
+                        if (adjustedImageData) {
+                            ctx.putImageData(adjustedImageData, 0, 0);
+                            console.log('色相調整完了');
+                        } else {
+                            console.log('色相調整失敗、元の画像を使用');
+                        }
                     } else {
                         // 色相調整なしで描画
                         ctx.drawImage(backgroundImg, 0, 0, 400, 400);
@@ -862,20 +862,19 @@ your-project/
                         // 背景画像のサイズをログ出力（デバッグ用）
                         console.log('描画時の背景画像サイズ:', backgroundImg.width, 'x', backgroundImg.height);
                         
-                        // 色相調整の適用（サポート状況に応じて自動選択）
-                        if (hueAdjustment !== 0 && canvasFilterSupported) {
-                            // Canvas filterを使用（高速）
-                            console.log('動画生成: Canvas filter使用:', hueAdjustment, '度');
-                            ctx.filter = `hue-rotate(${hueAdjustment}deg)`;
-                            ctx.drawImage(backgroundImg, 0, 0, 1000, 1000);
-                            ctx.filter = 'none'; // フィルターをリセット
-                        } else if (hueAdjustment !== 0) {
-                            // 手動実装を使用（互換性重視）
+                        // 色相調整の適用（モバイル対応強化版）
+                        if (hueAdjustment !== 0) {
+                            // 手動実装を優先使用（確実な動作のため）
                             console.log('動画生成: 手動色相調整適用中:', hueAdjustment, '度');
                             ctx.drawImage(backgroundImg, 0, 0, 1000, 1000);
                             const imageData = ctx.getImageData(0, 0, 1000, 1000);
                             const adjustedImageData = applyHueRotationToCanvas(ctx, imageData, hueAdjustment);
-                            ctx.putImageData(adjustedImageData, 0, 0);
+                            if (adjustedImageData) {
+                                ctx.putImageData(adjustedImageData, 0, 0);
+                                console.log('動画生成: 色相調整完了');
+                            } else {
+                                console.log('動画生成: 色相調整失敗、元の画像を使用');
+                            }
                         } else {
                             // 色相調整なしで描画
                             ctx.drawImage(backgroundImg, 0, 0, 1000, 1000);
@@ -1080,29 +1079,48 @@ your-project/
                             setTimeout(reject, 5000); // 5秒でタイムアウト
                         });
                         
-                        // MediaStreamを作成して音声トラックを取得
+                        // MediaStreamを作成して音声トラックを取得（モバイル対応強化版）
+                        console.log('captureStream サポート:', !!tempVideo.captureStream);
+                        
                         if (tempVideo.captureStream) {
                             // モバイルでの再生確保：先に動画を再生開始
                             tempVideo.currentTime = 0;
                             tempVideo.volume = 0; // 音量を0に設定（音は出さないが音声トラックは取得）
                             
                             try {
-                                // モバイルでの音声取得のため再生を試行
+                                // ユーザーインタラクションを活用した再生試行
+                                console.log('音声用動画再生開始を試行中...');
                                 const audioPlayPromise = tempVideo.play();
                                 if (audioPlayPromise !== undefined) {
                                     await Promise.race([
                                         audioPlayPromise,
-                                        new Promise((_, reject) => setTimeout(() => reject(new Error('音声再生タイムアウト')), 3000))
+                                        new Promise((_, reject) => setTimeout(() => reject(new Error('音声再生タイムアウト')), 5000))
                                     ]);
                                 }
                                 console.log('音声用動画再生開始成功（音量0）');
                                 
+                                // 少し待ってからcaptureStreamを実行（モバイル対応）
+                                await new Promise(resolve => setTimeout(resolve, 100));
+                                
                                 // 再生開始後にcaptureStreamを実行
                                 const videoMediaStream = tempVideo.captureStream();
+                                console.log('captureStream実行完了');
+                                
                                 const audioTracks = videoMediaStream.getAudioTracks();
+                                console.log('取得した音声トラック数:', audioTracks.length);
                                 
                                 if (audioTracks.length > 0) {
                                     console.log('音声トラック検出:', audioTracks.length + '個');
+                                    
+                                    // 音声トラックの詳細情報をログ出力
+                                    audioTracks.forEach((track, index) => {
+                                        console.log(`音声トラック${index}:`, {
+                                            enabled: track.enabled,
+                                            readyState: track.readyState,
+                                            kind: track.kind,
+                                            label: track.label
+                                        });
+                                    });
                                     
                                     // 新しいMediaStreamを作成して音声とビデオを合成
                                     const combinedStream = new MediaStream();
@@ -1119,6 +1137,7 @@ your-project/
                                     
                                     finalStream = combinedStream;
                                     console.log('音声付きストリーム作成成功');
+                                    console.log('最終ストリームのトラック数:', finalStream.getTracks().length);
                                 } else {
                                     console.log('音声トラックが見つかりません');
                                 }
