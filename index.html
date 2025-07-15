@@ -128,31 +128,61 @@ your-project/
                 { title: '生成', icon: Download }
             ];
 
-            // 色相調整スライダーコンポーネント
+            // 色相調整スライダーコンポーネント（モバイル対応版）
             const HueSlider = ({ value, onChange }) => {
-                const handleMouseMove = (e) => {
-                    if (e.buttons !== 1) return; // 左クリック押下中のみ
-                    
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
+                const [isDragging, setIsDragging] = useState(false);
+
+                // 共通の値更新処理
+                const updateValue = (clientX, element) => {
+                    const rect = element.getBoundingClientRect();
+                    const x = clientX - rect.left;
                     const percentage = Math.max(0, Math.min(1, x / rect.width));
                     const hue = Math.round((percentage - 0.5) * 360); // -180 to +180
+                    console.log('色相値更新:', hue, '度');
                     onChange(hue);
                 };
 
+                // マウスイベント
+                const handleMouseMove = (e) => {
+                    if (e.buttons !== 1) return; // 左クリック押下中のみ
+                    updateValue(e.clientX, e.currentTarget);
+                };
+
                 const handleClick = (e) => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const percentage = Math.max(0, Math.min(1, x / rect.width));
-                    const hue = Math.round((percentage - 0.5) * 360); // -180 to +180
-                    onChange(hue);
+                    updateValue(e.clientX, e.currentTarget);
+                };
+
+                // タッチイベント（モバイル対応）
+                const handleTouchStart = (e) => {
+                    e.preventDefault(); // デフォルトのスクロール等を防ぐ
+                    setIsDragging(true);
+                    updateValue(e.touches[0].clientX, e.currentTarget);
+                };
+
+                const handleTouchMove = (e) => {
+                    if (!isDragging) return;
+                    e.preventDefault(); // デフォルトのスクロール等を防ぐ
+                    updateValue(e.touches[0].clientX, e.currentTarget);
+                };
+
+                const handleTouchEnd = (e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
                 };
 
                 // value (-180 to +180) を percentage (0 to 1) に変換
                 const valueToPercentage = (val) => (val + 180) / 360;
 
                 return (
-                    <div className="relative w-full h-8 cursor-pointer" onMouseMove={handleMouseMove} onClick={handleClick}>
+                    <div 
+                        className="relative w-full h-8 cursor-pointer" 
+                        onMouseMove={handleMouseMove} 
+                        onClick={handleClick}
+                        onTouchStart={handleTouchStart}
+                        onTouchMove={handleTouchMove}
+                        onTouchEnd={handleTouchEnd}
+                        style={{ touchAction: 'none' }} // タッチ操作を最適化
+                    >
                         {/* 色相バー */}
                         <div 
                             className="w-full h-full rounded-lg"
@@ -434,6 +464,7 @@ your-project/
             // 背景やhueが変更されたときにプレビューを更新
             useEffect(() => {
                 if (currentStep === 2 && gameData && Object.keys(backgroundImages).length > 0) {
+                    console.log('プレビュー更新: 背景=', selectedBackground, ', 色相=', hueAdjustment);
                     generatePreview();
                 }
             }, [selectedBackground, hueAdjustment]);
@@ -752,22 +783,45 @@ your-project/
                         // ユーザーの動画を描画（x:700 y:500中心、幅400px、縦横比保持）
                         if (videoElement.readyState >= 2) {
                             try {
-                                const targetWidth = 400;  // 800/2
-                                const aspectRatio = videoElement.videoHeight / videoElement.videoWidth;
-                                const targetHeight = targetWidth * aspectRatio;
-                                
-                                const videoX = 700 - (targetWidth / 2); // 中心から左端を計算（1400/2）
-                                const videoY = 500 - (targetHeight / 2); // 中心から上端を計算（1000/2）
-                                
-                                // 動画を描画（ボーダーなし）
-                                ctx.drawImage(videoElement, videoX, videoY, targetWidth, targetHeight);
+                                // 動画のサイズが有効かチェック
+                                if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+                                    const targetWidth = 400;  // 800/2
+                                    const aspectRatio = videoElement.videoHeight / videoElement.videoWidth;
+                                    const targetHeight = targetWidth * aspectRatio;
+                                    
+                                    const videoX = 700 - (targetWidth / 2); // 中心から左端を計算（1400/2）
+                                    const videoY = 500 - (targetHeight / 2); // 中心から上端を計算（1000/2）
+                                    
+                                    // 動画を描画（ボーダーなし）
+                                    ctx.drawImage(videoElement, videoX, videoY, targetWidth, targetHeight);
+                                } else {
+                                    console.log('動画サイズが無効:', videoElement.videoWidth, 'x', videoElement.videoHeight);
+                                    // プレースホルダーを描画
+                                    ctx.fillStyle = '#333333';
+                                    ctx.fillRect(700 - 200, 500 - 150, 400, 300);
+                                    ctx.fillStyle = '#FFFFFF';
+                                    ctx.font = '20px Arial';
+                                    ctx.textAlign = 'center';
+                                    ctx.fillText('動画読み込み中...', 700, 500);
+                                }
                             } catch (e) {
                                 console.log('動画描画エラー:', e);
-                                // デバッグ用の矩形を描画
-                                ctx.strokeStyle = '#FF0000';
-                                ctx.lineWidth = 3;
-                                ctx.strokeRect(700 - 200, 500 - 150, 400, 300);
+                                // プレースホルダーを描画
+                                ctx.fillStyle = '#333333';
+                                ctx.fillRect(700 - 200, 500 - 150, 400, 300);
+                                ctx.fillStyle = '#FFFFFF';
+                                ctx.font = '20px Arial';
+                                ctx.textAlign = 'center';
+                                ctx.fillText('動画描画エラー', 700, 500);
                             }
+                        } else {
+                            // 動画がまだ準備できていない場合のプレースホルダー
+                            ctx.fillStyle = '#333333';
+                            ctx.fillRect(700 - 200, 500 - 150, 400, 300);
+                            ctx.fillStyle = '#FFFFFF';
+                            ctx.font = '20px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('動画準備中...', 700, 500);
                         }
 
                         // ゲームタイトルの描画（x:241 y:843中心、中央揃え）
@@ -885,14 +939,23 @@ your-project/
                                 finalStream = combinedStream;
                                 console.log('音声付きストリーム作成成功');
                                 
-                                // 一時的な動画要素を再生（音声同期のため、モバイルでは無効化）
+                                // 一時的な動画要素を再生（音声同期のため）
                                 tempVideo.currentTime = 0;
                                 tempVideo.muted = true; // 再生前にも念のためミュート
-                                if (!isMobile) {
-                                    await tempVideo.play();
-                                    console.log('音声用動画再生開始（PC・ミュート状態）');
-                                } else {
-                                    console.log('モバイル環境のため音声用動画の自動再生をスキップ');
+                                
+                                try {
+                                    // モバイルでもミュート状態なら再生を試行
+                                    const audioPlayPromise = tempVideo.play();
+                                    if (audioPlayPromise !== undefined) {
+                                        await Promise.race([
+                                            audioPlayPromise,
+                                            new Promise((_, reject) => setTimeout(() => reject(new Error('音声再生タイムアウト')), 2000))
+                                        ]);
+                                    }
+                                    console.log('音声用動画再生開始成功（ミュート状態）');
+                                } catch (audioPlayError) {
+                                    console.log('音声用動画の再生に失敗:', audioPlayError);
+                                    console.log('音声なしで動画生成を続行');
                                 }
                             } else {
                                 console.log('音声トラックが見つかりません');
@@ -906,26 +969,57 @@ your-project/
                         // 音声なしでも録画は続行
                     }
                     
-                    // ブラウザ対応の確認（MP4を優先）
-                    let mimeType = 'video/mp4';
+                    // ブラウザ対応の確認（モバイル対応版）
+                    let mimeType = '';
+                    let videoBitsPerSecond = 8000000; // デフォルト 8Mbps
+                    
                     if (typeof MediaRecorder === 'undefined') {
                         throw new Error('このブラウザは動画録画をサポートしていません');
                     }
                     
-                    if (!MediaRecorder.isTypeSupported(mimeType)) {
-                        mimeType = 'video/webm;codecs=vp8';
-                        if (!MediaRecorder.isTypeSupported(mimeType)) {
-                            mimeType = 'video/webm';
+                    // モバイル環境では低ビットレートに調整
+                    if (isMobileDevice) {
+                        videoBitsPerSecond = 4000000; // 4Mbps（モバイル用）
+                        console.log('モバイル環境: ビットレートを4Mbpsに調整');
+                    }
+                    
+                    // サポートされているMIMEタイプを順次チェック
+                    const mimeTypes = [
+                        'video/mp4',
+                        'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+                        'video/webm;codecs=vp9,opus',
+                        'video/webm;codecs=vp8,opus',
+                        'video/webm;codecs=vp9',
+                        'video/webm;codecs=vp8',
+                        'video/webm'
+                    ];
+                    
+                    for (const type of mimeTypes) {
+                        if (MediaRecorder.isTypeSupported(type)) {
+                            mimeType = type;
+                            break;
                         }
                     }
                     
+                    if (!mimeType) {
+                        throw new Error('このブラウザは対応可能な動画形式がありません');
+                    }
+                    
                     console.log('使用するMIMEタイプ:', mimeType);
+                    console.log('ビットレート:', videoBitsPerSecond);
 
-                    // MediaRecorderの設定で解像度を明示的に指定
-                    const mediaRecorder = new MediaRecorder(finalStream, { 
+                    // MediaRecorderの設定（モバイル対応版）
+                    const recorderOptions = { 
                         mimeType,
-                        videoBitsPerSecond: 8000000  // 8Mbps（高品質）
-                    });
+                        videoBitsPerSecond
+                    };
+                    
+                    // モバイルでは音声ビットレートも調整
+                    if (isMobileDevice && finalStream.getAudioTracks().length > 0) {
+                        recorderOptions.audioBitsPerSecond = 128000; // 128kbps
+                    }
+                    
+                    const mediaRecorder = new MediaRecorder(finalStream, recorderOptions);
                     
                     const chunks = [];
                     mediaRecorder.ondataavailable = (event) => {
@@ -952,19 +1046,30 @@ your-project/
                     };
 
                     // モバイル判定（ユーザーエージェントベース）
-                    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
                     
-                    // 動画の再生開始（モバイルでは無効化）
-                    if (!isMobile) {
-                        try {
-                            await videoElement.play();
-                            console.log('動画再生開始成功（PC）');
-                        } catch (playError) {
-                            console.log('動画自動再生に失敗:', playError);
-                            // 自動再生に失敗した場合でも録画は開始
+                    // 動画の再生開始（モバイルでも試行）
+                    let videoPlaySuccess = false;
+                    try {
+                        // ミュート状態で再生を試行（モバイルでもミュートなら再生できる場合がある）
+                        videoElement.muted = true;
+                        videoElement.currentTime = 0;
+                        
+                        // プロミス化してタイムアウト付きで再生試行
+                        const playPromise = videoElement.play();
+                        if (playPromise !== undefined) {
+                            await Promise.race([
+                                playPromise,
+                                new Promise((_, reject) => setTimeout(() => reject(new Error('タイムアウト')), 3000))
+                            ]);
                         }
-                    } else {
-                        console.log('モバイル環境のため動画自動再生をスキップ');
+                        videoPlaySuccess = true;
+                        console.log('動画再生開始成功:', isMobileDevice ? 'モバイル' : 'PC');
+                    } catch (playError) {
+                        console.log('動画自動再生に失敗:', playError);
+                        console.log('フレーム描画は手動で行います');
+                        // 自動再生に失敗した場合でも録画は開始
+                        videoPlaySuccess = false;
                     }
 
                     // 少し待ってから録画開始（Canvasが安定するまで）
@@ -974,14 +1079,29 @@ your-project/
                     mediaRecorder.start(100);
                     console.log('録画開始 - 解像度:', canvas.width, 'x', canvas.height);
 
-                    // フレーム描画のループ
+                    // フレーム描画のループ（モバイル対応版）
                     let frameCount = 0;
+                    const totalFrames = 900; // 30秒 × 30fps
+                    const videoDurationMs = Math.min(videoElement.duration * 1000 || 30000, 30000);
+                    
                     const animate = () => {
+                        // 動画再生が成功している場合は自動で進む
+                        if (!videoPlaySuccess) {
+                            // 動画再生が失敗している場合は手動でシークする
+                            const progress = frameCount / totalFrames;
+                            const targetTime = (videoDurationMs / 1000) * progress;
+                            
+                            // 動画の時間を手動で設定
+                            if (videoElement.duration && targetTime <= videoElement.duration) {
+                                videoElement.currentTime = targetTime;
+                            }
+                        }
+                        
                         drawFrame();
                         frameCount++;
                         
-                        // 動画が再生中、または最大フレーム数に達するまで続行
-                        if ((!videoElement.paused && !videoElement.ended) || frameCount < 900) { // 30秒 × 30fps
+                        // 最大フレーム数まで続行
+                        if (frameCount < totalFrames) {
                             requestAnimationFrame(animate);
                         }
                     };
