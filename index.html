@@ -47,6 +47,7 @@ your-project/
         const Image = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>;
         const Type = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10v-2H7v2zM21 9h-8v6h8V9zM3 9h8v6H3V9z" /></svg>;
         const User = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>;
+        const XIcon = () => <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>;
 
         const DreamCoreVideoGenerator = () => {
             const [currentStep, setCurrentStep] = useState(0);
@@ -68,6 +69,8 @@ your-project/
             const [selectedBackground, setSelectedBackground] = useState(1); // 1-6
             const [hueAdjustment, setHueAdjustment] = useState(0); // -180 to +180
             const [previewUrl, setPreviewUrl] = useState(null);
+            const [backgroundImages, setBackgroundImages] = useState({}); // プリロードされた背景画像のキャッシュ
+            const [isLoadingPreview, setIsLoadingPreview] = useState(false); // プレビュー生成中フラグ
 
             const videoRef = useRef(null);
             const canvasRef = useRef(null);
@@ -143,39 +146,101 @@ your-project/
                 );
             };
 
-            // プレビュー生成関数
+            // 背景画像プリロード関数
+            const preloadBackgroundImages = async () => {
+                console.log('背景画像のプリロードを開始...');
+                const promises = [];
+                
+                for (let i = 1; i <= 6; i++) {
+                    if (!backgroundImages[i]) { // まだキャッシュされていない場合のみ
+                        promises.push(
+                            new Promise((resolve) => {
+                                const img = document.createElement('img');
+                                img.addEventListener('load', () => {
+                                    console.log(`背景画像 ${i} の読み込み完了`);
+                                    resolve({ index: i, image: img });
+                                });
+                                img.addEventListener('error', () => {
+                                    console.log(`背景画像 ${i} の読み込み失敗、デフォルト画像を生成`);
+                                    // デフォルト背景を作成
+                                    const canvas = document.createElement('canvas');
+                                    canvas.width = 1000;
+                                    canvas.height = 1000;
+                                    const ctx = canvas.getContext('2d');
+                                    ctx.fillStyle = '#FF6B35';
+                                    ctx.fillRect(0, 0, 1000, 1000);
+                                    
+                                    const defaultImg = document.createElement('img');
+                                    defaultImg.addEventListener('load', () => {
+                                        resolve({ index: i, image: defaultImg });
+                                    });
+                                    defaultImg.src = canvas.toDataURL();
+                                });
+                                img.src = `./assets/bg_format_${i}.png`;
+                            })
+                        );
+                    }
+                }
+                
+                // 全ての背景画像を並行して読み込み
+                const loadedImages = await Promise.all(promises);
+                
+                // キャッシュに保存
+                const newBackgroundImages = { ...backgroundImages };
+                loadedImages.forEach(({ index, image }) => {
+                    newBackgroundImages[index] = image;
+                });
+                setBackgroundImages(newBackgroundImages);
+                
+                console.log('全ての背景画像のプリロードが完了');
+                return newBackgroundImages;
+            };
+
+            // プレビュー生成関数（高速化版）
             const generatePreview = async (bgIndex = selectedBackground, hue = hueAdjustment) => {
                 if (!gameData) return;
 
                 const canvas = previewCanvasRef.current;
                 if (!canvas) return;
 
+                setIsLoadingPreview(true);
+
                 const ctx = canvas.getContext('2d');
                 canvas.width = 400; // プレビュー用の小さいサイズ
                 canvas.height = 400;
 
                 try {
-                    // 背景画像を読み込み
-                    const backgroundImg = await new Promise((resolve, reject) => {
-                        const img = document.createElement('img');
-                        
-                        img.addEventListener('load', () => resolve(img));
-                        img.addEventListener('error', () => {
-                            // デフォルト背景を作成
-                            const canvas = document.createElement('canvas');
-                            canvas.width = 400;
-                            canvas.height = 400;
-                            const ctx = canvas.getContext('2d');
-                            ctx.fillStyle = '#FF6B35';
-                            ctx.fillRect(0, 0, 400, 400);
+                    // キャッシュされた背景画像を使用（高速化）
+                    let backgroundImg = backgroundImages[bgIndex];
+                    
+                    if (!backgroundImg) {
+                        console.log(`背景画像 ${bgIndex} がキャッシュにない、個別に読み込み中...`);
+                        // キャッシュにない場合は個別に読み込み
+                        backgroundImg = await new Promise((resolve, reject) => {
+                            const img = document.createElement('img');
                             
-                            const defaultImg = document.createElement('img');
-                            defaultImg.addEventListener('load', () => resolve(defaultImg));
-                            defaultImg.src = canvas.toDataURL();
+                            img.addEventListener('load', () => {
+                                // 読み込んだ画像をキャッシュに保存
+                                setBackgroundImages(prev => ({ ...prev, [bgIndex]: img }));
+                                resolve(img);
+                            });
+                            img.addEventListener('error', () => {
+                                // デフォルト背景を作成
+                                const canvas = document.createElement('canvas');
+                                canvas.width = 400;
+                                canvas.height = 400;
+                                const ctx = canvas.getContext('2d');
+                                ctx.fillStyle = '#FF6B35';
+                                ctx.fillRect(0, 0, 400, 400);
+                                
+                                const defaultImg = document.createElement('img');
+                                defaultImg.addEventListener('load', () => resolve(defaultImg));
+                                defaultImg.src = canvas.toDataURL();
+                            });
+                            
+                            img.src = `./assets/bg_format_${bgIndex}.png`;
                         });
-                        
-                        img.src = `./assets/bg_format_${bgIndex}.png`;
-                    });
+                    }
 
                     // 色相調整を適用して背景を描画
                     ctx.save();
@@ -311,15 +376,26 @@ your-project/
 
                 } catch (error) {
                     console.error('プレビュー生成エラー:', error);
+                } finally {
+                    setIsLoadingPreview(false);
                 }
             };
 
-            // 背景やhueが変更されたときにプレビューを更新
+            // プレビューステップに入った時に背景画像をプリロード
             useEffect(() => {
                 if (currentStep === 2 && gameData) {
+                    preloadBackgroundImages().then(() => {
+                        generatePreview();
+                    });
+                }
+            }, [currentStep, gameData]);
+
+            // 背景やhueが変更されたときにプレビューを更新
+            useEffect(() => {
+                if (currentStep === 2 && gameData && Object.keys(backgroundImages).length > 0) {
                     generatePreview();
                 }
-            }, [selectedBackground, hueAdjustment, gameData, currentStep]);
+            }, [selectedBackground, hueAdjustment]);
 
 
 
@@ -394,43 +470,49 @@ your-project/
                     canvas.width = 1000;  // 1000x1000に変更
                     canvas.height = 1000;
 
-                    // 背景画像を読み込み（選択された背景を使用）
-                    const backgroundImg = await new Promise((resolve, reject) => {
-                        const img = document.createElement('img');
-                        
-                        img.addEventListener('load', () => resolve(img));
-                        img.addEventListener('error', () => {
-                            console.log('背景画像が見つかりません。デフォルト背景を使用します。');
-                            // デフォルト背景を作成
-                            const canvas = document.createElement('canvas');
-                            canvas.width = 1000;  // 1000x1000に変更
-                            canvas.height = 1000;
-                            const ctx = canvas.getContext('2d');
-                            ctx.fillStyle = '#FF6B35';
-                            ctx.fillRect(0, 0, 1000, 1000);
+                    // キャッシュされた背景画像を使用（動画生成も高速化）
+                    let backgroundImg = backgroundImages[selectedBackground];
+                    
+                    if (!backgroundImg) {
+                        console.log(`動画生成用背景画像 ${selectedBackground} をキャッシュから取得できません、個別に読み込み中...`);
+                        // キャッシュにない場合は個別に読み込み
+                        backgroundImg = await new Promise((resolve, reject) => {
+                            const img = document.createElement('img');
                             
-                            // DreamCoreロゴエリア（左上）
-                            ctx.fillStyle = '#FFFFFF';
-                            ctx.font = 'bold 30px Arial';  // サイズ調整（60/2）
-                            ctx.fillText('DreamCore', 55, 92);  // 座標調整（111/2, 185/2）
-                            ctx.fillText('×', 222, 92);  // 座標調整（444/2, 185/2）
+                            img.addEventListener('load', () => resolve(img));
+                            img.addEventListener('error', () => {
+                                console.log('背景画像が見つかりません。デフォルト背景を使用します。');
+                                // デフォルト背景を作成
+                                const canvas = document.createElement('canvas');
+                                canvas.width = 1000;  // 1000x1000に変更
+                                canvas.height = 1000;
+                                const ctx = canvas.getContext('2d');
+                                ctx.fillStyle = '#FF6B35';
+                                ctx.fillRect(0, 0, 1000, 1000);
+                                
+                                // DreamCoreロゴエリア（左上）
+                                ctx.fillStyle = '#FFFFFF';
+                                ctx.font = 'bold 30px Arial';  // サイズ調整（60/2）
+                                ctx.fillText('DreamCore', 55, 92);  // 座標調整（111/2, 185/2）
+                                ctx.fillText('×', 222, 92);  // 座標調整（444/2, 185/2）
+                                
+                                // ピンク枠の描画（左側）
+                                ctx.fillStyle = '#FF1493';
+                                ctx.fillRect(111, 312, 370, 520);  // 座標・サイズ調整（全て半分）
+                                
+                                // 青枠の描画（右側）
+                                ctx.fillStyle = '#1E90FF';
+                                ctx.fillRect(532, 129, 463, 740);  // 座標・サイズ調整（全て半分）
+                                
+                                const defaultImg = document.createElement('img');
+                                defaultImg.addEventListener('load', () => resolve(defaultImg));
+                                defaultImg.src = canvas.toDataURL();
+                            });
                             
-                            // ピンク枠の描画（左側）
-                            ctx.fillStyle = '#FF1493';
-                            ctx.fillRect(111, 312, 370, 520);  // 座標・サイズ調整（全て半分）
-                            
-                            // 青枠の描画（右側）
-                            ctx.fillStyle = '#1E90FF';
-                            ctx.fillRect(532, 129, 463, 740);  // 座標・サイズ調整（全て半分）
-                            
-                            const defaultImg = document.createElement('img');
-                            defaultImg.addEventListener('load', () => resolve(defaultImg));
-                            defaultImg.src = canvas.toDataURL();
+                            // CORS問題を回避するため、同一オリジンでのみ読み込み
+                            img.src = `./assets/bg_format_${selectedBackground}.png`;
                         });
-                        
-                        // CORS問題を回避するため、同一オリジンでのみ読み込み
-                        img.src = `./assets/bg_format_${selectedBackground}.png`;
-                    });
+                    }
 
                     // ユーザーがアップロードした動画を読み込み
                     const videoElement = document.createElement('video');
@@ -636,11 +718,7 @@ your-project/
                                 const videoX = 700 - (targetWidth / 2); // 中心から左端を計算（1400/2）
                                 const videoY = 500 - (targetHeight / 2); // 中心から上端を計算（1000/2）
                                 
-                                // 外側のボーダー（白、2px）
-                                ctx.fillStyle = '#ffffff';
-                                ctx.fillRect(videoX - 2, videoY - 2, targetWidth + 4, targetHeight + 4);
-                                
-                                // 動画を描画
+                                // 動画を描画（ボーダーなし）
                                 ctx.drawImage(videoElement, videoX, videoY, targetWidth, targetHeight);
                             } catch (e) {
                                 console.log('動画描画エラー:', e);
@@ -730,7 +808,7 @@ your-project/
                         // 動画ファイルのストリームを作成
                         tempVideo = document.createElement('video');
                         tempVideo.src = URL.createObjectURL(videoFile);
-                        tempVideo.muted = false; // 音声を有効化
+                        tempVideo.muted = true; // 音声をミュート（音声トラック取得のみのため）
                         tempVideo.loop = true; // ループ再生で同期を保つ
                         tempVideo.playsInline = true; // iOSでの自動再生対応
                         tempVideo.preload = 'metadata'; // メタデータのみ読み込み
@@ -768,9 +846,10 @@ your-project/
                                 
                                 // 一時的な動画要素を再生（音声同期のため、モバイルでは無効化）
                                 tempVideo.currentTime = 0;
+                                tempVideo.muted = true; // 再生前にも念のためミュート
                                 if (!isMobile) {
                                     await tempVideo.play();
-                                    console.log('音声用動画再生開始（PC）');
+                                    console.log('音声用動画再生開始（PC・ミュート状態）');
                                 } else {
                                     console.log('モバイル環境のため音声用動画の自動再生をスキップ');
                                 }
@@ -1135,7 +1214,12 @@ your-project/
                             <div>
                                 <h3 className="text-lg font-semibold text-white mb-4">プレビュー</h3>
                                 <div className="bg-slate-700/50 rounded-lg p-4">
-                                    {previewUrl ? (
+                                    {isLoadingPreview ? (
+                                        <div className="w-full max-w-sm mx-auto aspect-square bg-slate-600 rounded-lg flex flex-col items-center justify-center">
+                                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400 mb-3"></div>
+                                            <span className="text-gray-400 text-sm">背景画像を読み込み中...</span>
+                                        </div>
+                                    ) : previewUrl ? (
                                         <img 
                                             src={previewUrl} 
                                             alt="プレビュー"
@@ -1262,14 +1346,26 @@ your-project/
                                                     src={outputVideo}
                                                 />
                                             </div>
-                                            <a
-                                                href={outputVideo}
-                                                download={`dreamcore-video.${outputVideoMimeType?.includes('mp4') ? 'mp4' : 'webm'}`}
-                                                className="bg-gradient-to-r from-green-500 to-emerald-500 text-white px-6 md:px-8 py-3 md:py-4 rounded-lg font-semibold text-base md:text-lg hover:from-green-600 hover:to-emerald-600 transition-all inline-flex items-center w-full md:w-auto justify-center"
-                                            >
-                                                <Download />
-                                                <span className="ml-2">動画をダウンロード</span>
-                                            </a>
+                                            <div className="flex flex-col md:flex-row gap-4 justify-center items-center">
+                                                <a
+                                                    href={outputVideo}
+                                                    download={`dreamcore-video.${outputVideoMimeType?.includes('mp4') ? 'mp4' : 'webm'}`}
+                                                    className="bg-gradient-to-r from-green-500 to-emerald-500 text-white px-6 md:px-8 py-3 md:py-4 rounded-lg font-semibold text-base md:text-lg hover:from-green-600 hover:to-emerald-600 transition-all inline-flex items-center w-full md:w-auto justify-center"
+                                                >
+                                                    <Download />
+                                                    <span className="ml-2">動画をダウンロード</span>
+                                                </a>
+                                                
+                                                <a
+                                                    href="https://x.com/suemaruuuuuuX"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="bg-black text-white border border-gray-700 px-6 md:px-8 py-3 md:py-4 rounded-lg font-semibold text-base md:text-lg hover:bg-gray-900 transition-all inline-flex items-center w-full md:w-auto justify-center"
+                                                >
+                                                    <XIcon />
+                                                    <span className="ml-2">作者をフォロー</span>
+                                                </a>
+                                            </div>
                                             <div className="mt-6">
                                                                                             <button
                                                 onClick={() => {
@@ -1283,6 +1379,8 @@ your-project/
                                                     setSelectedBackground(1);
                                                     setHueAdjustment(0);
                                                     setPreviewUrl(null);
+                                                    setBackgroundImages({}); // キャッシュもクリア
+                                                    setIsLoadingPreview(false);
                                                 }}
                                                 className="text-purple-400 hover:text-purple-300 transition-all text-base md:text-lg"
                                             >
@@ -1327,7 +1425,6 @@ your-project/
                                 >
                                     @suemaruuuuuuX
                                 </a>
-                                {' '}| フォローお願いします！！
                             </p>
                         </div>
                     </footer>
