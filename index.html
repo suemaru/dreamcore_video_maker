@@ -149,41 +149,52 @@ your-project/
                 { title: '生成', icon: Download }
             ];
 
-            // 色相調整スライダーコンポーネント（モバイル対応版）
+            // 新しいモバイル対応色相調整スライダー
             const HueSlider = ({ value, onChange }) => {
+                const sliderRef = useRef(null);
                 const [isDragging, setIsDragging] = useState(false);
 
-                // 共通の値更新処理
-                const updateValue = (clientX, element) => {
-                    const rect = element.getBoundingClientRect();
+                // 値を更新する関数
+                const updateHue = (clientX) => {
+                    if (!sliderRef.current) return;
+                    
+                    const rect = sliderRef.current.getBoundingClientRect();
                     const x = clientX - rect.left;
                     const percentage = Math.max(0, Math.min(1, x / rect.width));
-                    const hue = Math.round((percentage - 0.5) * 360); // -180 to +180
-                    console.log('色相値更新:', hue, '度');
-                    onChange(hue);
+                    const newHue = Math.round((percentage - 0.5) * 360); // -180 to +180
+                    
+                    console.log('色相スライダー更新:', newHue, '度');
+                    onChange(newHue);
                 };
 
                 // マウスイベント
-                const handleMouseMove = (e) => {
-                    if (e.buttons !== 1) return; // 左クリック押下中のみ
-                    updateValue(e.clientX, e.currentTarget);
+                const handleMouseDown = (e) => {
+                    setIsDragging(true);
+                    updateHue(e.clientX);
                 };
 
-                const handleClick = (e) => {
-                    updateValue(e.clientX, e.currentTarget);
+                const handleMouseMove = (e) => {
+                    if (isDragging) {
+                        updateHue(e.clientX);
+                    }
+                };
+
+                const handleMouseUp = () => {
+                    setIsDragging(false);
                 };
 
                 // タッチイベント（モバイル対応）
                 const handleTouchStart = (e) => {
-                    e.preventDefault(); // デフォルトのスクロール等を防ぐ
+                    e.preventDefault();
                     setIsDragging(true);
-                    updateValue(e.touches[0].clientX, e.currentTarget);
+                    updateHue(e.touches[0].clientX);
                 };
 
                 const handleTouchMove = (e) => {
-                    if (!isDragging) return;
-                    e.preventDefault(); // デフォルトのスクロール等を防ぐ
-                    updateValue(e.touches[0].clientX, e.currentTarget);
+                    if (isDragging) {
+                        e.preventDefault();
+                        updateHue(e.touches[0].clientX);
+                    }
                 };
 
                 const handleTouchEnd = (e) => {
@@ -191,47 +202,49 @@ your-project/
                     setIsDragging(false);
                 };
 
-                // value (-180 to +180) を percentage (0 to 1) に変換
+                // グローバルイベントリスナー
+                useEffect(() => {
+                    if (isDragging) {
+                        document.addEventListener('mousemove', handleMouseMove);
+                        document.addEventListener('mouseup', handleMouseUp);
+                        document.addEventListener('touchmove', handleTouchMove);
+                        document.addEventListener('touchend', handleTouchEnd);
+                        
+                        return () => {
+                            document.removeEventListener('mousemove', handleMouseMove);
+                            document.removeEventListener('mouseup', handleMouseUp);
+                            document.removeEventListener('touchmove', handleTouchMove);
+                            document.removeEventListener('touchend', handleTouchEnd);
+                        };
+                    }
+                }, [isDragging]);
+
+                // 値をパーセンテージに変換
                 const valueToPercentage = (val) => (val + 180) / 360;
 
                 return (
                     <div 
-                        className="relative w-full h-8 cursor-pointer" 
-                        onMouseMove={handleMouseMove} 
-                        onClick={handleClick}
+                        ref={sliderRef}
+                        className="relative w-full h-10 cursor-pointer select-none"
+                        onMouseDown={handleMouseDown}
                         onTouchStart={handleTouchStart}
-                        onTouchMove={handleTouchMove}
-                        onTouchEnd={handleTouchEnd}
-                        style={{ touchAction: 'none' }} // タッチ操作を最適化
+                        style={{ touchAction: 'none' }}
                     >
                         {/* 色相バー */}
                         <div 
-                            className="w-full h-full rounded-lg"
+                            className="w-full h-6 rounded-lg mt-2"
                             style={{
-                                background: 'linear-gradient(to right, #00ffff, #0000ff, #ff00ff, #ff0000, #ffff00, #00ff00, #00ffff)'
+                                background: 'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)'
                             }}
                         />
-                        {/* スライダー */}
+                        
+                        {/* スライダーハンドル */}
                         <div 
-                            className="absolute top-0 w-0 h-0 pointer-events-none"
+                            className="absolute top-0 w-6 h-10 bg-white rounded-full border-2 border-gray-300 shadow-lg pointer-events-none"
                             style={{
                                 left: `${valueToPercentage(value) * 100}%`,
                                 transform: 'translateX(-50%)',
-                                borderLeft: '8px solid transparent',
-                                borderRight: '8px solid transparent',
-                                borderTop: '12px solid white',
-                                filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
-                            }}
-                        />
-                        <div 
-                            className="absolute bottom-0 w-0 h-0 pointer-events-none"
-                            style={{
-                                left: `${valueToPercentage(value) * 100}%`,
-                                transform: 'translateX(-50%)',
-                                borderLeft: '8px solid transparent',
-                                borderRight: '8px solid transparent',
-                                borderBottom: '12px solid white',
-                                filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'
+                                transition: isDragging ? 'none' : 'left 0.1s ease'
                             }}
                         />
                     </div>
@@ -288,118 +301,26 @@ your-project/
                 return newBackgroundImages;
             };
 
-            // 色相調整を手動で適用する関数（Canvas filterの代替・最適化版）
-            const applyHueRotationToCanvas = (ctx, imageData, hue) => {
-                if (hue === 0 || !imageData) return imageData;
+            // 新しいシンプルな色相調整関数
+            const applyHueRotation = (ctx, canvas, hue) => {
+                if (hue === 0) return;
                 
-                try {
-                    const data = new Uint8ClampedArray(imageData.data);
-                    const hueRotation = (hue / 360) % 1; // 正規化された色相回転
-                    
-                    // 最適化されたRGB to HSL および HSL to RGB 変換関数
-                    const rgbToHsl = (r, g, b) => {
-                        r /= 255; g /= 255; b /= 255;
-                        const max = Math.max(r, g, b);
-                        const min = Math.min(r, g, b);
-                        let h, s, l = (max + min) / 2;
-                        
-                        if (max === min) {
-                            h = s = 0; // グレースケール
-                        } else {
-                            const d = max - min;
-                            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-                            switch (max) {
-                                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-                                case g: h = (b - r) / d + 2; break;
-                                case b: h = (r - g) / d + 4; break;
-                            }
-                            h /= 6;
-                        }
-                        return [h, s, l];
-                    };
-                    
-                    const hslToRgb = (h, s, l) => {
-                        let r, g, b;
-                        
-                        if (s === 0) {
-                            r = g = b = l; // グレースケール
-                        } else {
-                            const hue2rgb = (p, q, t) => {
-                                if (t < 0) t += 1;
-                                if (t > 1) t -= 1;
-                                if (t < 1/6) return p + (q - p) * 6 * t;
-                                if (t < 1/2) return q;
-                                if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-                                return p;
-                            };
-                            
-                            const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-                            const p = 2 * l - q;
-                            r = hue2rgb(p, q, h + 1/3);
-                            g = hue2rgb(p, q, h);
-                            b = hue2rgb(p, q, h - 1/3);
-                        }
-                        
-                        return [r * 255, g * 255, b * 255];
-                    };
-                    
-                    // ピクセル処理（4つずつ処理してバッチ最適化）
-                    const len = data.length;
-                    for (let i = 0; i < len; i += 4) {
-                        const a = data[i + 3];
-                        
-                        // 透明度が低いピクセルはスキップ
-                        if (a < 5) continue;
-                        
-                        const r = data[i];
-                        const g = data[i + 1];
-                        const b = data[i + 2];
-                        
-                        // グレーピクセルの場合は処理をスキップ（最適化）
-                        if (Math.abs(r - g) < 2 && Math.abs(g - b) < 2 && Math.abs(r - b) < 2) {
-                            continue;
-                        }
-                        
-                        // RGB to HSL
-                        const [h, s, l] = rgbToHsl(r, g, b);
-                        
-                        // 色相を回転（正規化）
-                        let newH = h + hueRotation;
-                        if (newH < 0) newH += 1;
-                        if (newH > 1) newH -= 1;
-                        
-                        // HSL to RGB
-                        const [newR, newG, newB] = hslToRgb(newH, s, l);
-                        
-                        // 値をクランプしてから設定
-                        data[i] = Math.max(0, Math.min(255, Math.round(newR)));
-                        data[i + 1] = Math.max(0, Math.min(255, Math.round(newG)));
-                        data[i + 2] = Math.max(0, Math.min(255, Math.round(newB)));
-                        // アルファ値は変更しない
-                    }
-                    
-                    return new ImageData(data, imageData.width, imageData.height);
-                } catch (error) {
-                    console.error('色相調整エラー:', error);
-                    // エラーが発生した場合は元の画像データを返す
-                    return imageData;
-                }
+                console.log('色相調整開始:', hue, '度');
+                
+                // CSS filterを使用した色相調整
+                const filterValue = `hue-rotate(${hue}deg)`;
+                ctx.filter = filterValue;
+                
+                console.log('色相調整フィルター適用:', filterValue);
             };
 
-            // Canvas filter対応の判定
-            const checkCanvasFilterSupport = () => {
-                try {
-                    const testCanvas = document.createElement('canvas');
-                    const testCtx = testCanvas.getContext('2d');
-                    testCtx.filter = 'hue-rotate(10deg)';
-                    return testCtx.filter === 'hue-rotate(10deg)';
-                } catch (error) {
-                    return false;
-                }
+            // 色相調整をリセットする関数
+            const resetHueRotation = (ctx) => {
+                ctx.filter = 'none';
             };
 
-            const canvasFilterSupported = checkCanvasFilterSupport();
-            console.log('Canvas filter サポート状況:', canvasFilterSupported ? 'サポート済み' : '非サポート（手動実装を使用）');
+            // Canvas filter は常に使用する（モダンブラウザなら必ずサポート）
+            console.log('色相調整システム初期化完了');
             console.log('User Agent:', navigator.userAgent);
 
             // プレビュー生成関数（モバイル対応版・自動フォールバック）
@@ -448,30 +369,12 @@ your-project/
                         });
                     }
 
-                    // 色相調整の適用（パフォーマンス優先版）
-                    if (hue !== 0 && canvasFilterSupported) {
-                        // Canvas filterを使用（高速）
-                        console.log('Canvas filter使用:', hue, '度');
-                        ctx.filter = `hue-rotate(${hue}deg)`;
-                        ctx.drawImage(backgroundImg, 0, 0, 400, 400);
-                        ctx.filter = 'none'; // フィルターをリセット
-                        console.log('Canvas filter色相調整完了');
-                    } else if (hue !== 0) {
-                        // 手動実装をフォールバックとして使用
-                        console.log('手動色相調整適用中:', hue, '度');
-                        ctx.drawImage(backgroundImg, 0, 0, 400, 400);
-                        const imageData = ctx.getImageData(0, 0, 400, 400);
-                        const adjustedImageData = applyHueRotationToCanvas(ctx, imageData, hue);
-                        if (adjustedImageData) {
-                            ctx.putImageData(adjustedImageData, 0, 0);
-                            console.log('手動色相調整完了');
-                        } else {
-                            console.log('色相調整失敗、元の画像を使用');
-                        }
-                    } else {
-                        // 色相調整なしで描画
-                        ctx.drawImage(backgroundImg, 0, 0, 400, 400);
-                    }
+                    // 色相調整を適用して背景を描画
+                    applyHueRotation(ctx, canvas, hue);
+                    ctx.drawImage(backgroundImg, 0, 0, 400, 400);
+                    resetHueRotation(ctx);
+                    
+                    console.log('プレビュー色相調整完了:', hue, '度');
 
                     // 画像の読み込み（FileReaderを使用）
                     const loadImageFromFile = (file) => {
@@ -869,30 +772,12 @@ your-project/
                         // 背景画像のサイズをログ出力（デバッグ用）
                         console.log('描画時の背景画像サイズ:', backgroundImg.width, 'x', backgroundImg.height);
                         
-                        // 色相調整の適用（パフォーマンス優先版）
-                        if (hueAdjustment !== 0 && canvasFilterSupported) {
-                            // Canvas filterを使用（高速）
-                            console.log('動画生成: Canvas filter使用:', hueAdjustment, '度');
-                            ctx.filter = `hue-rotate(${hueAdjustment}deg)`;
-                            ctx.drawImage(backgroundImg, 0, 0, 1000, 1000);
-                            ctx.filter = 'none'; // フィルターをリセット
-                            console.log('動画生成: Canvas filter色相調整完了');
-                        } else if (hueAdjustment !== 0) {
-                            // 手動実装をフォールバックとして使用
-                            console.log('動画生成: 手動色相調整適用中:', hueAdjustment, '度');
-                            ctx.drawImage(backgroundImg, 0, 0, 1000, 1000);
-                            const imageData = ctx.getImageData(0, 0, 1000, 1000);
-                            const adjustedImageData = applyHueRotationToCanvas(ctx, imageData, hueAdjustment);
-                            if (adjustedImageData) {
-                                ctx.putImageData(adjustedImageData, 0, 0);
-                                console.log('動画生成: 手動色相調整完了');
-                            } else {
-                                console.log('動画生成: 色相調整失敗、元の画像を使用');
-                            }
-                        } else {
-                            // 色相調整なしで描画
-                            ctx.drawImage(backgroundImg, 0, 0, 1000, 1000);
-                        }
+                        // 色相調整を適用して背景を描画
+                        applyHueRotation(ctx, canvas, hueAdjustment);
+                        ctx.drawImage(backgroundImg, 0, 0, 1000, 1000);
+                        resetHueRotation(ctx);
+                        
+                        console.log('動画生成色相調整完了:', hueAdjustment, '度');
 
                         // アカウント画像の描画（円形、x:376 y:200中心、直径140px）
                         if (accountImg) {
@@ -1981,7 +1866,7 @@ your-project/
                     <footer className="mt-12 py-6 border-t border-slate-700 bg-slate-800/30">
                         <div className="container mx-auto px-6 text-center">
                             <p className="text-gray-400 text-sm">
-                                DreamCore Video Maker ver1.1.4 Developed by{' '}
+                                DreamCore Video Maker ver1.1.5 Developed by{' '}
                                 <a 
                                     href="https://x.com/suemaruuuuuuX" 
                                     target="_blank" 
