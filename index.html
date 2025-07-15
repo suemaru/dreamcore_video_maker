@@ -71,6 +71,10 @@ your-project/
             const [previewUrl, setPreviewUrl] = useState(null);
             const [backgroundImages, setBackgroundImages] = useState({}); // プリロードされた背景画像のキャッシュ
             const [isLoadingPreview, setIsLoadingPreview] = useState(false); // プレビュー生成中フラグ
+            
+            // モバイル対応関連の状態
+            const [isMobile, setIsMobile] = useState(false);
+            const [isEditAccordionOpen, setIsEditAccordionOpen] = useState(false);
 
             const videoRef = useRef(null);
             const canvasRef = useRef(null);
@@ -78,6 +82,18 @@ your-project/
             const fileInputRef = useRef(null);
             const coverImageRef = useRef(null);
             const accountImageRef = useRef(null);
+
+            // モバイル判定
+            useEffect(() => {
+                const checkMobile = () => {
+                    setIsMobile(window.innerWidth < 1024); // lg breakpoint
+                };
+                
+                checkMobile();
+                window.addEventListener('resize', checkMobile);
+                
+                return () => window.removeEventListener('resize', checkMobile);
+            }, []);
 
             // ステップ定義
             const steps = [
@@ -197,8 +213,8 @@ your-project/
             };
 
             // プレビュー生成関数（高速化版）
-            const generatePreview = async (bgIndex = selectedBackground, hue = hueAdjustment) => {
-                if (!gameData) return;
+            const generatePreview = async (bgIndex = selectedBackground, hue = hueAdjustment, data = gameData) => {
+                if (!data) return;
 
                 const canvas = previewCanvasRef.current;
                 if (!canvas) return;
@@ -266,15 +282,15 @@ your-project/
                     };
 
                     // アカウント画像の描画（円形）
-                    if (gameData.accountImage) {
+                    if (data.accountImage) {
                         try {
-                            const accountImg = gameData.accountImage instanceof File ? 
-                                await loadImageFromFile(gameData.accountImage) : 
+                            const accountImg = data.accountImage instanceof File ? 
+                                await loadImageFromFile(data.accountImage) : 
                                 await new Promise((resolve, reject) => {
                                     const img = document.createElement('img');
                                     img.addEventListener('load', () => resolve(img));
                                     img.addEventListener('error', reject);
-                                    img.src = gameData.accountImage;
+                                    img.src = data.accountImage;
                                 });
 
                             const accountX = 150; // 400pxキャンバスでの位置調整
@@ -301,15 +317,15 @@ your-project/
                     }
 
                     // カバー画像の描画
-                    if (gameData.coverImage) {
+                    if (data.coverImage) {
                         try {
-                            const coverImg = gameData.coverImage instanceof File ? 
-                                await loadImageFromFile(gameData.coverImage) : 
+                            const coverImg = data.coverImage instanceof File ? 
+                                await loadImageFromFile(data.coverImage) : 
                                 await new Promise((resolve, reject) => {
                                     const img = document.createElement('img');
                                     img.addEventListener('load', () => resolve(img));
                                     img.addEventListener('error', reject);
-                                    img.src = gameData.coverImage;
+                                    img.src = data.coverImage;
                                 });
 
                             const targetHeight = 194; // 400pxキャンバスでの位置調整
@@ -335,7 +351,7 @@ your-project/
                     ctx.font = 'bold 13px Arial';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
-                    ctx.fillText(gameData.title, 96, 337);
+                    ctx.fillText(data.title, 96, 337);
 
                     // 説明文の描画
                     ctx.font = '9px Arial';
@@ -349,8 +365,8 @@ your-project/
                     const lines = [];
                     let line = '';
                     
-                    for (let i = 0; i < gameData.description.length; i++) {
-                        const char = gameData.description[i];
+                    for (let i = 0; i < data.description.length; i++) {
+                        const char = data.description[i];
                         const testLine = line + char;
                         const metrics = ctx.measureText(testLine);
                         const testWidth = metrics.width;
@@ -1102,16 +1118,17 @@ your-project/
                                 <div className="bg-slate-800/50 backdrop-blur-sm rounded-2xl p-8 border border-slate-700">
                                     <h2 className="text-2xl font-bold text-white mb-6 flex items-center">
                                         <Video />
-                                        <span className="ml-3">ゲームプレイ動画をアップロード</span>
+                                        <span className="ml-3">ゲーム動画をアップロード</span>
                                     </h2>
                                     
                                     <div className="border-2 border-dashed border-slate-600 rounded-xl p-12 text-center hover:border-purple-400 transition-all cursor-pointer"
                                          onClick={() => fileInputRef.current?.click()}>
                                         <Upload />
                                         <p className="text-xl text-gray-300 mb-2 mt-4">
-                                            {videoFile ? videoFile.name : 'クリックしてゲームプレイ動画を追加'}
+                                            {videoFile ? videoFile.name : 'クリックして動画を追加'}
                                         </p>
                                         <p className="text-gray-500">MP4, WebM, MOV対応（最大100MB）</p>
+                                        <p className="text-gray-500">最長で動画開始から30秒分使用します</p>
                                     </div>
                                     
                                     <input
@@ -1196,11 +1213,6 @@ your-project/
                                         value={hueAdjustment} 
                                         onChange={setHueAdjustment}
                                     />
-                                    <div className="flex justify-between text-xs text-gray-400">
-                                        <span>-180°</span>
-                                        <span>0°</span>
-                                        <span>+180°</span>
-                                    </div>
                                     <button
                                         onClick={() => setHueAdjustment(0)}
                                         className="text-purple-400 hover:text-purple-300 transition-all text-sm"
@@ -1236,34 +1248,254 @@ your-project/
 
                         {/* 右側: ゲーム情報確認 */}
                         <div className="space-y-6">
+                            {/* ゲーム情報編集セクション（モバイルではアコーディオン） */}
                             <div>
-                                <h3 className="text-lg font-semibold text-white mb-4">ゲーム情報</h3>
-                                <div className="bg-slate-700/50 rounded-lg p-4 space-y-3">
-                                    <div className="flex items-center">
-                                        <Type />
-                                        <span className="text-gray-300 ml-2">タイトル: </span>
-                                        <span className="text-white font-medium">{gameData.title}</span>
-                                    </div>
-                                    <div className="flex items-start">
-                                        <Image />
-                                        <span className="text-gray-300 ml-2 mt-0.5">説明: </span>
-                                        <span className="text-white">{gameData.description}</span>
-                                    </div>
-                                    {gameData.coverImage && (
-                                        <div className="flex items-center">
-                                            <Image />
-                                            <span className="text-gray-300 ml-2">カバー画像: </span>
-                                            <span className="text-green-400">✓ 設定済み</span>
+                                {isMobile ? (
+                                    // モバイル: アコーディオンとして表示
+                                    <div className="bg-slate-700/30 rounded-lg">
+                                        <button
+                                            onClick={() => setIsEditAccordionOpen(!isEditAccordionOpen)}
+                                            className="w-full p-4 text-left flex items-center justify-between focus:outline-none focus:ring-2 focus:ring-purple-400 rounded-lg"
+                                        >
+                                            <h3 className="text-lg font-semibold text-white">ゲーム情報を編集</h3>
+                                            <svg 
+                                                className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isEditAccordionOpen ? 'rotate-180' : ''}`}
+                                                fill="none" 
+                                                stroke="currentColor" 
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </button>
+                                        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isEditAccordionOpen ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0'}`}>
+                                            <div className="px-4 pb-4 space-y-4">
+                                                {/* タイトル編集 */}
+                                                <div>
+                                                    <label className="block text-gray-300 mb-2 text-sm">ゲームタイトル</label>
+                                                    <input
+                                                        type="text"
+                                                        value={gameData.title}
+                                                        onChange={(e) => {
+                                                            const newData = {...gameData, title: e.target.value};
+                                                            setGameData(newData);
+                                                            // プレビューを即座に更新（新しいデータを直接渡す）
+                                                            setTimeout(() => generatePreview(selectedBackground, hueAdjustment, newData), 100);
+                                                        }}
+                                                        className="w-full p-3 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-purple-400 focus:outline-none"
+                                                        placeholder="ゲームタイトルを入力"
+                                                    />
+                                                </div>
+                                                
+                                                {/* 説明文編集 */}
+                                                <div>
+                                                    <label className="block text-gray-300 mb-2 text-sm">説明文</label>
+                                                    <textarea
+                                                        value={gameData.description}
+                                                        onChange={(e) => {
+                                                            const newData = {...gameData, description: e.target.value};
+                                                            setGameData(newData);
+                                                            // プレビューを即座に更新（新しいデータを直接渡す）
+                                                            setTimeout(() => generatePreview(selectedBackground, hueAdjustment, newData), 100);
+                                                        }}
+                                                        className="w-full p-3 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-purple-400 focus:outline-none h-20 resize-none"
+                                                        placeholder="ゲームの説明"
+                                                    />
+                                                </div>
+                                                
+                                                {/* カバー画像編集 */}
+                                                <div>
+                                                    <label className="block text-gray-300 mb-2 text-sm">カバー画像</label>
+                                                    <div className="space-y-2">
+                                                        {gameData.coverImage && (
+                                                            <div className="bg-slate-700/50 rounded-lg p-3 mb-2">
+                                                                <div className="flex items-center text-green-400 text-sm">
+                                                                    <Image />
+                                                                    <span className="ml-2 text-white">現在設定中: </span>
+                                                                    <span className="ml-1 text-gray-300 break-all">
+                                                                        {gameData.coverImage instanceof File ? gameData.coverImage.name : 'アップロード済み'}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        <input
+                                                            type="file"
+                                                            accept="image/png,image/jpeg,image/jpg,image/gif"
+                                                            onChange={(e) => {
+                                                                const file = e.target.files[0];
+                                                                if (file) {
+                                                                    const supportedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
+                                                                    if (!supportedTypes.includes(file.type)) {
+                                                                        alert('PNG, JPEG, GIF形式の画像をアップロードしてください。');
+                                                                        e.target.value = '';
+                                                                        return;
+                                                                    }
+                                                                    const newData = {...gameData, coverImage: file};
+                                                                    setGameData(newData);
+                                                                    // プレビューを即座に更新（新しいデータを直接渡す）
+                                                                    setTimeout(() => generatePreview(selectedBackground, hueAdjustment, newData), 100);
+                                                                }
+                                                            }}
+                                                            className="w-full p-2 bg-slate-700 text-white rounded-lg border border-slate-600 text-sm"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                
+                                                {/* アカウント画像編集 */}
+                                                <div>
+                                                    <label className="block text-gray-300 mb-2 text-sm">アカウント画像</label>
+                                                    <div className="space-y-2">
+                                                        {gameData.accountImage && (
+                                                            <div className="bg-slate-700/50 rounded-lg p-3 mb-2">
+                                                                <div className="flex items-center text-green-400 text-sm">
+                                                                    <User />
+                                                                    <span className="ml-2 text-white">現在設定中: </span>
+                                                                    <span className="ml-1 text-gray-300 break-all">
+                                                                        {gameData.accountImage instanceof File ? gameData.accountImage.name : 'アップロード済み'}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        <input
+                                                            type="file"
+                                                            accept="image/png,image/jpeg,image/jpg,image/gif"
+                                                            onChange={(e) => {
+                                                                const file = e.target.files[0];
+                                                                if (file) {
+                                                                    const supportedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
+                                                                    if (!supportedTypes.includes(file.type)) {
+                                                                        alert('PNG, JPEG, GIF形式の画像をアップロードしてください。');
+                                                                        e.target.value = '';
+                                                                        return;
+                                                                    }
+                                                                    const newData = {...gameData, accountImage: file};
+                                                                    setGameData(newData);
+                                                                    // プレビューを即座に更新（新しいデータを直接渡す）
+                                                                    setTimeout(() => generatePreview(selectedBackground, hueAdjustment, newData), 100);
+                                                                }
+                                                            }}
+                                                            className="w-full p-2 bg-slate-700 text-white rounded-lg border border-slate-600 text-sm"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
-                                    )}
-                                    {gameData.accountImage && (
-                                        <div className="flex items-center">
-                                            <User />
-                                            <span className="text-gray-300 ml-2">アカウント画像: </span>
-                                            <span className="text-green-400">✓ 設定済み</span>
+                                    </div>
+                                ) : (
+                                    // デスクトップ: 従来通り表示
+                                    <div>
+                                        <h3 className="text-lg font-semibold text-white mb-4">ゲーム情報を編集</h3>
+                                        <div className="space-y-4">
+                                            {/* タイトル編集 */}
+                                            <div>
+                                                <label className="block text-gray-300 mb-2 text-sm">ゲームタイトル</label>
+                                                <input
+                                                    type="text"
+                                                    value={gameData.title}
+                                                    onChange={(e) => {
+                                                        const newData = {...gameData, title: e.target.value};
+                                                        setGameData(newData);
+                                                        // プレビューを即座に更新（新しいデータを直接渡す）
+                                                        setTimeout(() => generatePreview(selectedBackground, hueAdjustment, newData), 100);
+                                                    }}
+                                                    className="w-full p-3 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-purple-400 focus:outline-none"
+                                                    placeholder="ゲームタイトルを入力"
+                                                />
+                                            </div>
+                                            
+                                            {/* 説明文編集 */}
+                                            <div>
+                                                <label className="block text-gray-300 mb-2 text-sm">説明文</label>
+                                                <textarea
+                                                    value={gameData.description}
+                                                    onChange={(e) => {
+                                                        const newData = {...gameData, description: e.target.value};
+                                                        setGameData(newData);
+                                                        // プレビューを即座に更新（新しいデータを直接渡す）
+                                                        setTimeout(() => generatePreview(selectedBackground, hueAdjustment, newData), 100);
+                                                    }}
+                                                    className="w-full p-3 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-purple-400 focus:outline-none h-20 resize-none"
+                                                    placeholder="ゲームの説明"
+                                                />
+                                            </div>
+                                            
+                                            {/* カバー画像編集 */}
+                                            <div>
+                                                <label className="block text-gray-300 mb-2 text-sm">カバー画像</label>
+                                                <div className="space-y-2">
+                                                    {gameData.coverImage && (
+                                                        <div className="bg-slate-700/50 rounded-lg p-3 mb-2">
+                                                            <div className="flex items-center text-green-400 text-sm">
+                                                                <Image />
+                                                                <span className="ml-2 text-white">現在設定中: </span>
+                                                                <span className="ml-1 text-gray-300 break-all">
+                                                                    {gameData.coverImage instanceof File ? gameData.coverImage.name : 'アップロード済み'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    <input
+                                                        type="file"
+                                                        accept="image/png,image/jpeg,image/jpg,image/gif"
+                                                        onChange={(e) => {
+                                                            const file = e.target.files[0];
+                                                            if (file) {
+                                                                const supportedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
+                                                                if (!supportedTypes.includes(file.type)) {
+                                                                    alert('PNG, JPEG, GIF形式の画像をアップロードしてください。');
+                                                                    e.target.value = '';
+                                                                    return;
+                                                                }
+                                                                const newData = {...gameData, coverImage: file};
+                                                                setGameData(newData);
+                                                                // プレビューを即座に更新（新しいデータを直接渡す）
+                                                                setTimeout(() => generatePreview(selectedBackground, hueAdjustment, newData), 100);
+                                                            }
+                                                        }}
+                                                        className="w-full p-2 bg-slate-700 text-white rounded-lg border border-slate-600 text-sm"
+                                                    />
+                                                </div>
+                                            </div>
+                                            
+                                            {/* アカウント画像編集 */}
+                                            <div>
+                                                <label className="block text-gray-300 mb-2 text-sm">アカウント画像</label>
+                                                <div className="space-y-2">
+                                                    {gameData.accountImage && (
+                                                        <div className="bg-slate-700/50 rounded-lg p-3 mb-2">
+                                                            <div className="flex items-center text-green-400 text-sm">
+                                                                <User />
+                                                                <span className="ml-2 text-white">現在設定中: </span>
+                                                                <span className="ml-1 text-gray-300 break-all">
+                                                                    {gameData.accountImage instanceof File ? gameData.accountImage.name : 'アップロード済み'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    <input
+                                                        type="file"
+                                                        accept="image/png,image/jpeg,image/jpg,image/gif"
+                                                        onChange={(e) => {
+                                                            const file = e.target.files[0];
+                                                            if (file) {
+                                                                const supportedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif'];
+                                                                if (!supportedTypes.includes(file.type)) {
+                                                                    alert('PNG, JPEG, GIF形式の画像をアップロードしてください。');
+                                                                    e.target.value = '';
+                                                                    return;
+                                                                }
+                                                                const newData = {...gameData, accountImage: file};
+                                                                setGameData(newData);
+                                                                // プレビューを即座に更新（新しいデータを直接渡す）
+                                                                setTimeout(() => generatePreview(selectedBackground, hueAdjustment, newData), 100);
+                                                            }
+                                                        }}
+                                                        className="w-full p-2 bg-slate-700 text-white rounded-lg border border-slate-600 text-sm"
+                                                    />
+                                                </div>
+                                            </div>
                                         </div>
-                                    )}
-                                </div>
+                                    </div>
+                                )}
                             </div>
                             
                             <div>
@@ -1272,21 +1504,7 @@ your-project/
                                     <div className="flex items-center">
                                         <Video />
                                         <span className="text-gray-300 ml-2">ファイル名: </span>
-                                        <span className="text-white font-medium">{videoFile?.name}</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <h3 className="text-lg font-semibold text-white mb-4">設定</h3>
-                                <div className="bg-slate-700/50 rounded-lg p-4 space-y-3">
-                                    <div className="flex items-center">
-                                        <span className="text-gray-300">背景: </span>
-                                        <span className="text-white font-medium">パターン {selectedBackground}</span>
-                                    </div>
-                                    <div className="flex items-center">
-                                        <span className="text-gray-300">色相: </span>
-                                        <span className="text-white font-medium">{hueAdjustment}°</span>
+                                        <span className="text-white font-medium text-sm break-all">{videoFile?.name}</span>
                                     </div>
                                 </div>
                             </div>
@@ -1367,25 +1585,25 @@ your-project/
                                                 </a>
                                             </div>
                                             <div className="mt-6">
-                                                                                            <button
-                                                onClick={() => {
-                                                    setCurrentStep(0);
-                                                    setGameData(null);
-                                                    setVideoFile(null);
-                                                    setOutputVideo(null);
-                                                    setOutputVideoMimeType(null);
-                                                    setErrorMessage('');
-                                                    setManualData({ title: '', description: '', coverImage: null, accountImage: null });
-                                                    setSelectedBackground(1);
-                                                    setHueAdjustment(0);
-                                                    setPreviewUrl(null);
-                                                    setBackgroundImages({}); // キャッシュもクリア
-                                                    setIsLoadingPreview(false);
-                                                }}
-                                                className="text-purple-400 hover:text-purple-300 transition-all text-base md:text-lg"
-                                            >
-                                                新しい動画を作成
-                                            </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setCurrentStep(0);
+                                                        setGameData(null);
+                                                        setVideoFile(null);
+                                                        setOutputVideo(null);
+                                                        setOutputVideoMimeType(null);
+                                                        setErrorMessage('');
+                                                        setManualData({ title: '', description: '', coverImage: null, accountImage: null });
+                                                        setSelectedBackground(1);
+                                                        setHueAdjustment(0);
+                                                        setPreviewUrl(null);
+                                                        setBackgroundImages({}); // キャッシュもクリア
+                                                        setIsLoadingPreview(false);
+                                                    }}
+                                                    className="text-purple-400 hover:text-purple-300 transition-all text-base md:text-lg"
+                                                >
+                                                    新しい動画を作成
+                                                </button>
                                             </div>
                                         </div>
                                     ) : null}
