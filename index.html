@@ -108,6 +108,27 @@ your-project/
             const coverImageRef = useRef(null);
             const accountImageRef = useRef(null);
 
+            // 色相調整済み背景画像をキャッシュ
+            const [adjustedBackgroundCache, setAdjustedBackgroundCache] = useState({});
+
+            // 背景または色相が変更された時に一度だけ重い処理
+            const generateAdjustedBackground = async () => {
+                const cacheKey = `${selectedBackground}-${hueAdjustment}`;
+                
+                if (adjustedBackgroundCache[cacheKey]) {
+                    return adjustedBackgroundCache[cacheKey]; // キャッシュから取得
+                }
+                
+                // 重い処理を一度だけ実行
+                const adjustedImage = await processHueAdjustment();
+                setAdjustedBackgroundCache(prev => ({
+                    ...prev,
+                    [cacheKey]: adjustedImage
+                }));
+                
+                return adjustedImage;
+            };
+
             // モバイル判定
             useEffect(() => {
                 const checkMobile = () => {
@@ -377,8 +398,7 @@ your-project/
                 }
             };
 
-            // const canvasFilterSupported = checkCanvasFilterSupport();
-            const canvasFilterSupported = false; // 強制的に手動実装を使用
+            const canvasFilterSupported = checkCanvasFilterSupport();
             console.log('Canvas filter サポート状況:', canvasFilterSupported ? 'サポート済み' : '非サポート（手動実装を使用）');
 
             // プレビュー生成関数（モバイル対応版・自動フォールバック）
@@ -1917,7 +1937,7 @@ your-project/
                     <footer className="mt-12 py-6 border-t border-slate-700 bg-slate-800/30">
                         <div className="container mx-auto px-6 text-center">
                             <p className="text-gray-400 text-sm">
-                                DreamCore Video Maker ver1.1 Developed by{' '}
+                                DreamCore Video Maker ver1.1.1 Developed by{' '}
                                 <a 
                                     href="https://x.com/suemaruuuuuuX" 
                                     target="_blank" 
